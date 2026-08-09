@@ -10,32 +10,7 @@ AvarOCR::AvarOCR(QWidget *parent)
 
     this->mainSplitter = new QSplitter(Qt::Vertical);
 
-    QWidget* containerArea = new QWidget(this->mainSplitter);
-
-
-    // Create a layout for the container
-    QHBoxLayout* layout = new QHBoxLayout(containerArea);
-    layout->setContentsMargins(2, 2, 2, 2); // Optional spacing
-    layout->setSpacing(2);
-    layout->setAlignment(Qt::AlignTop);
-    QPushButton* runOCRButton = new QPushButton("Run OCR", this);
-    runOCRButton->setFixedHeight(35);
-    runOCRButton->setFixedWidth(55);
-    layout->addWidget(runOCRButton);
-
-    QCheckBox* switchBox = new QCheckBox("Enable Feature");
-    switchBox->setStyleSheet(
-        "QCheckBox::indicator:checked { image: url(:/res/switchOn); }"
-        "QCheckBox::indicator:unchecked { image: url(:/res/switchOff); }"
-        "QCheckBox::indicator { width: 40px; height: 20px; }"
-    );
-
-    layout->addWidget(switchBox);
-
- 
-    containerArea->setLayout(layout);
-
-    this->mainSplitter->addWidget(containerArea);
+    initOperationsPannel();
     
     this->windowSplitter = new QSplitter(Qt::Horizontal);
     this->windowSplitter->setWindowTitle("Split Window Example");
@@ -43,13 +18,48 @@ AvarOCR::AvarOCR(QWidget *parent)
 
     this->mainSplitter->addWidget(this->windowSplitter);
 
-
     this->initImagesListWidget();
     this->initOcrArea();
-
     this->initMenuBar();
-    this->initStartOCRButton();
+
+    this->infoLabel = new QLabel("Start", this);
+    this->infoLabel->setFixedHeight(25);
+    this->mainSplitter->addWidget(this->infoLabel);
     this->setCentralWidget(this->mainSplitter);
+}
+
+void AvarOCR::initOperationsPannel()
+{
+    QWidget* containerArea = new QWidget(this->mainSplitter);
+    containerArea->setFixedHeight(40);
+
+    // Create a layout for the container
+    QHBoxLayout* layout = new QHBoxLayout(containerArea);
+    layout->setContentsMargins(5, 5, 0, 0); // Optional spacing
+    //layout->setSpacing(100);
+    layout->setAlignment(Qt::AlignLeft);
+    QPushButton* runOCRButton = new QPushButton("Run OCR", this);
+    //runOCRButton->setFixedHeight(35);
+    //runOCRButton->setFixedWidth(55);
+    connect(runOCRButton, &QPushButton::clicked, this, &AvarOCR::handleStartOCR);
+    layout->addWidget(runOCRButton);
+
+    this->viewFormatSwitch = new SwitchButton(this);
+    this->viewFormatSwitch->setFixedHeight(25);
+    this->viewFormatSwitch->setFixedWidth(50);
+    this->viewFormatSwitch->setChecked(false);
+
+    connect(viewFormatSwitch, &QPushButton::toggled, this, &AvarOCR::handleViewFormatSwitch);
+
+    layout->addWidget(viewFormatSwitch);
+
+    switchLabel = new QLabel("Image", this);
+    layout->addWidget(switchLabel);
+
+    containerArea->setLayout(layout);
+
+    this->mainSplitter->addWidget(containerArea);
+
 }
 
 void AvarOCR::initMenuBar()
@@ -75,18 +85,62 @@ void AvarOCR::initOcrArea()
     this->windowSplitter->addWidget(this->ocrArea);
 }
 
-void AvarOCR::initStartOCRButton()
+void AvarOCR::handleViewFormatSwitch(bool checked)
 {
-    //QPushButton* button = new QPushButton("Click Me",this);
-    //button->setGeometry(50, 50, 100, 30);
-
-    //// Connect the click signal to the handler function
-    //QObject::connect(button, &QPushButton::clicked, AvarOCR::handleStartOCR);
+    if (checked)
+    {
+        this->switchLabel->setText("Text");
+        if(this->curentOCRImageInfo!=NULL)
+            this->viewAsText(this->ocrArea, this->curentOCRImageInfo->ocrText);
+    }
+    else
+    {
+        this->switchLabel->setText("Image");
+        if (this->curentOCRImageInfo != NULL)
+            this->viewAsImage(this->ocrArea, this->curentOCRImageInfo->filename);
+    }
 }
 
 void AvarOCR::handleStartOCR()
 {
-    int aa = 0;
+    for (OCRImageInfo& ocrImageInfo : this->OCRImageInfoList) {
+
+         // 1. Initialize the Tesseract API instance
+         tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
+         api->Init("data", "avar");
+         // 2. Initialize OCR engine with English ("eng") and LSTM engine mode
+         // Note: Change the path to where your "tessdata" folder is stored.
+         if (api->Init(".\\tessdata", "avar", tesseract::OEM_LSTM_ONLY)) {
+             std::cerr << "Could not initialize tesseract." << std::endl;
+             continue;
+         }
+         QByteArray filenameArray = ocrImageInfo.filename.toUtf8();
+         QString infoText = QString("OCR: \"%1\"").arg(ocrImageInfo.filename);
+         this->infoLabel->setText(infoText);
+         const char* c_str = filenameArray.constData();
+         // 3. Open the image file using Leptonica library
+         Pix* image = pixRead(c_str);
+         if (!image) {
+             std::cerr << "Could not open input image." << std::endl;
+             api->End();
+             continue;
+         }
+
+         // 4. Set the image into the engine and run OCR
+         api->SetImage(image);
+         char* outText = api->GetUTF8Text();
+         ocrImageInfo.ocrText = QString(outText);
+         // 5. Print the recognized text
+         std::cout << "OCR Result:\n" << outText << std::endl;
+
+         // 6. Free memory and clean up pointers
+         api->End();
+         delete api;
+         delete[] outText;
+         pixDestroy(&image);
+      
+    }
+ 
 }
 void AvarOCR::initImagesListWidget()
 {
@@ -109,7 +163,7 @@ void AvarOCR::initImagesListWidget()
         "   padding: 16px;"
         "}"
         "QListWidget::item:selected {"
-        "   background-color: #ffffff;"        // цвет выбранного пункта
+        "   background-color: #аfffff;"        // цвет выбранного пункта
         "   color: blue;"
         "}"
     );
@@ -117,65 +171,84 @@ void AvarOCR::initImagesListWidget()
 
     this->windowSplitter->addWidget(this->imagesListWidget);
 
-    // 3. Populate the list with images
-    QStringList imagePaths = { "C:\\Users\\User\\Desktop\\images\\image1.png", "C:\\Users\\User\\Desktop\\images\\image2.png", "C:\\Users\\User\\Desktop\\images\\image3.png" };
+    //// 3. Populate the list with images
+    //QStringList imagePaths = { "C:\\Users\\User\\Desktop\\images\\image1.png", "C:\\Users\\User\\Desktop\\images\\image2.png", "C:\\Users\\User\\Desktop\\images\\image3.png" };
 
-    for (const QString& path : imagePaths) {
+    //for (const QString& path : imagePaths) {
 
-        OCRImageInfo ocrImageInfo;
-        ocrImageInfo.item = new QListWidgetItem(this->imagesListWidget);
-        ocrImageInfo.item->setTextAlignment(Qt::AlignCenter);
-        ocrImageInfo.container = new QWidget();
-        ocrImageInfo.layout = new QVBoxLayout(ocrImageInfo.container);
+    //    OCRImageInfo ocrImageInfo;
+    //    ocrImageInfo.item = new QListWidgetItem(this->imagesListWidget);
+    //    ocrImageInfo.item->setBackground(Qt::green); // или QColor("#00ff00")
+    //    ocrImageInfo.item->setTextAlignment(Qt::AlignCenter);
+    //    ocrImageInfo.container = new QWidget();
+    //    ocrImageInfo.layout = new QVBoxLayout(ocrImageInfo.container);
 
-        ocrImageInfo.filename = QString(path);
+    //    ocrImageInfo.filename = QString(path);
 
-        QLabel* imageLabel = new QLabel("Left Text");
+    //    QLabel* imageLabel = new QLabel("Left Text");
 
-        QPixmap pixmap = QPixmap(path);
-        imageLabel->setPixmap(pixmap.scaled(400, 400,Qt::KeepAspectRatio));
-        QLabel* filenameLabel = new QLabel(path);
+    //    QPixmap pixmap = QPixmap(path);
+    //    imageLabel->setPixmap(pixmap.scaled(400, 400,Qt::KeepAspectRatio));
+    //    QLabel* filenameLabel = new QLabel(path);
 
-        imageLabel->setAlignment(Qt::AlignCenter);
-        filenameLabel->setAlignment(Qt::AlignCenter);
+    //    imageLabel->setAlignment(Qt::AlignCenter);
+    //    filenameLabel->setAlignment(Qt::AlignCenter);
 
-        ocrImageInfo.layout->addWidget(imageLabel);
-        ocrImageInfo.layout->addWidget(filenameLabel);
-        ocrImageInfo.layout->setContentsMargins(2,2,2,2);
-        ocrImageInfo.item->setSizeHint(ocrImageInfo.container->sizeHint());
+    //    ocrImageInfo.layout->addWidget(imageLabel);
+    //    ocrImageInfo.layout->addWidget(filenameLabel);
+    //    ocrImageInfo.layout->setContentsMargins(2,2,2,2);
+    //    ocrImageInfo.item->setSizeHint(ocrImageInfo.container->sizeHint());
 
-        ocrImageInfo.container->setLayout(ocrImageInfo.layout);
-        this->imagesListWidget->setItemWidget(ocrImageInfo.item, ocrImageInfo.container);
+    //    ocrImageInfo.container->setLayout(ocrImageInfo.layout);
+    //    this->imagesListWidget->setItemWidget(ocrImageInfo.item, ocrImageInfo.container);
 
-        this->OCRImageInfoList.append(ocrImageInfo);
+    //    this->OCRImageInfoList.append(ocrImageInfo);
 
-        //this->OCRImageInfoList.append(ocrImageInfo);
-
-       // QIcon icon(path);
-       // QListWidgetItem* item = new QListWidgetItem("sdfdsf");
-       // item->setIcon(icon);
-       //// item->setText("fsdf");
-       // item->setForeground(QBrush(Qt::blue));
-       // item->setTextAlignment(Qt::AlignHCenter);
-       // this->imagesListWidget->addItem(item);
-    }
+    //}
 
 }
 
 void AvarOCR::handleImagesListWidgetDoubleClick(QListWidgetItem* item)
 {
-    for (const OCRImageInfo& ocrImageInfo : this->OCRImageInfoList) {
+    for (OCRImageInfo& ocrImageInfo : this->OCRImageInfoList) {
         if (ocrImageInfo.item == item)
         {
-            QLabel* imageLabel = new QLabel;
-            QPixmap pixmap(ocrImageInfo.filename);
-            imageLabel->setPixmap(pixmap);
+            this->curentOCRImageInfo = &ocrImageInfo;
+            if (this->viewFormatSwitch->isChecked())
+            {
+                this->viewAsText(this->ocrArea, ocrImageInfo.ocrText);
+            }
+            else
+            {
+                this->viewAsImage(this->ocrArea, ocrImageInfo.filename);
+            }
 
-            imageLabel->resize(pixmap.size());
-            this->ocrArea->setWidget(imageLabel);
+            QString infoText = QString("Show: \"%1\"").arg(ocrImageInfo.filename);
+            this->infoLabel->setText(infoText);
         }
     }
 }
+
+void AvarOCR::viewAsText(QScrollArea * scrollArea, QString text)
+{
+
+    QSize visibleSize = scrollArea->viewport()->size();
+    QTextEdit* textEditor = new QTextEdit();
+    textEditor->resize(visibleSize);
+    textEditor->setText(text);
+    scrollArea->setWidget(textEditor);
+}
+
+void AvarOCR::viewAsImage(QScrollArea * scrollArea, QString imagePath)
+{
+    QLabel* imageLabel = new QLabel;
+    QPixmap pixmap(imagePath);
+    imageLabel->setPixmap(pixmap);
+
+    imageLabel->resize(pixmap.size());
+    scrollArea->setWidget(imageLabel);
+}
+
 void AvarOCR::OpenFileDialog()
 {
     //QString fileName = QFileDialog::getOpenFileName(
@@ -192,6 +265,41 @@ void AvarOCR::OpenFileDialog()
         tr("Images (*.png *.xpm *.jpg);;Text files (*.txt);;All Files (*)")
     );
 
+
+    // 3. Populate the list with images
+   // QStringList imagePaths = { "C:\\Users\\User\\Desktop\\images\\image1.png", "C:\\Users\\User\\Desktop\\images\\image2.png", "C:\\Users\\User\\Desktop\\images\\image3.png" };
+
+    for (const QString& path : fileNames) {
+
+        OCRImageInfo ocrImageInfo;
+        ocrImageInfo.item = new QListWidgetItem(this->imagesListWidget);
+        ocrImageInfo.item->setBackground(Qt::green); // или QColor("#00ff00")
+        ocrImageInfo.item->setTextAlignment(Qt::AlignCenter);
+        ocrImageInfo.container = new QWidget();
+        ocrImageInfo.layout = new QVBoxLayout(ocrImageInfo.container);
+
+        ocrImageInfo.filename = QString(path);
+
+        QLabel* imageLabel = new QLabel("Left Text");
+
+        QPixmap pixmap = QPixmap(path);
+        imageLabel->setPixmap(pixmap.scaled(400, 400, Qt::KeepAspectRatio));
+        QLabel* filenameLabel = new QLabel(path);
+
+        imageLabel->setAlignment(Qt::AlignCenter);
+        filenameLabel->setAlignment(Qt::AlignCenter);
+
+        ocrImageInfo.layout->addWidget(imageLabel);
+        ocrImageInfo.layout->addWidget(filenameLabel);
+        ocrImageInfo.layout->setContentsMargins(2, 2, 2, 2);
+        ocrImageInfo.item->setSizeHint(ocrImageInfo.container->sizeHint());
+
+        ocrImageInfo.container->setLayout(ocrImageInfo.layout);
+        this->imagesListWidget->setItemWidget(ocrImageInfo.item, ocrImageInfo.container);
+
+        this->OCRImageInfoList.append(ocrImageInfo);
+
+    }
 
 }
 

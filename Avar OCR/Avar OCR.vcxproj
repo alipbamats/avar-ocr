@@ -73,6 +73,16 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Link>
+      <AdditionalDependencies>crypt32.lib;bcrypt.lib;xmllite.lib;iphlpapi.lib;secur32.lib;bz2.lib;libcurl.lib;gif.lib;leptonica-1.87.0.lib;archive.lib;jpeg.lib;turbojpeg.lib;lzma.lib;libpng16.lib;libsharpyuv.lib;libwebp.lib;libwebpdecoder.lib;libwebpdemux.lib;libwebpmux.lib;lz4.lib;openjp2.lib;libcrypto.lib;libssl.lib;tesseract55.lib;tiff.lib;zs.lib;zstd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(PojectDir)dependencies\bzip2_x64-windows-static\lib;$(PojectDir)dependencies\curl_x64-windows-static\lib;$(PojectDir)dependencies\giflib_x64-windows-static\lib;$(PojectDir)dependencies\leptonica_x64-windows-static\lib;$(PojectDir)dependencies\libarchive_x64-windows-static\lib;$(PojectDir)dependencies\libjpeg-turbo_x64-windows-static\lib;$(PojectDir)dependencies\liblzma_x64-windows-static\lib;$(PojectDir)dependencies\libpng_x64-windows-static\lib;$(PojectDir)dependencies\libwebp_x64-windows-static\lib;$(PojectDir)dependencies\lz4_x64-windows-static\lib;$(PojectDir)dependencies\openjpeg_x64-windows-static\lib;$(PojectDir)dependencies\openssl_x64-windows-static\lib;$(PojectDir)dependencies\tesseract_x64-windows-static\lib;$(PojectDir)dependencies\tiff_x64-windows-static\lib;$(PojectDir)dependencies\zlib_x64-windows-static\lib;$(PojectDir)dependencies\zstd_x64-windows-static\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>C:\Users\user\source\repos\Avar OCR\Avar OCR\dependencies\leptonica_x64-windows-static\include;C:\Users\user\source\repos\Avar OCR\Avar OCR\dependencies\tesseract_x64-windows-static\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -102,11 +112,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="switch.cpp" />
     <QtRcc Include="AvarOCR.qrc" />
     <QtUic Include="AvarOCR.ui" />
     <QtMoc Include="AvarOCR.h" />
     <ClCompile Include="AvarOCR.cpp" />
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="switch.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

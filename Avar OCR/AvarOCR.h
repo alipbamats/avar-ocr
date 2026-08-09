@@ -16,6 +16,12 @@
 #include <QPushButton>
 #include <QCheckBox>
 
+#include <iostream>
+#include <leptonica/allheaders.h>
+#include <tesseract/baseapi.h>
+
+#include "switch.h"
+
 struct OCRImageInfo
 {
     QString filename;
@@ -40,15 +46,23 @@ private:
     void initImagesListWidget();
     void initOcrArea();
     void initMenuBar();
-    void initStartOCRButton();
+    void initOperationsPannel();
     
     void handleStartOCR();
+    void handleViewFormatSwitch(bool checked);
     void handleImagesListWidgetDoubleClick(QListWidgetItem* item);
+
+    void viewAsText(QScrollArea * scrollArea, QString text);
+    void viewAsImage(QScrollArea * scrollArea, QString imagePath);
 
     QListWidget* imagesListWidget = NULL;
     QSplitter* windowSplitter = NULL;
     QSplitter* mainSplitter = NULL;
     QScrollArea* ocrArea = NULL;
+    QLabel* switchLabel = NULL;
+    SwitchButton* viewFormatSwitch = NULL;
+    QLabel* infoLabel = NULL;
+    OCRImageInfo* curentOCRImageInfo = NULL;
 
     QList<OCRImageInfo> OCRImageInfoList;
 };
