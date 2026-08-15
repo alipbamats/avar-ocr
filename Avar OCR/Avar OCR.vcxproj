@@ -71,6 +71,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>$(ProjectDir)dependencies\tesseract_x64-windows-static\include;$(ProjectDir)dependencies\leptonica_x64-windows-static\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -81,6 +82,7 @@
     <ClCompile>
       <AdditionalIncludeDirectories>C:\Users\user\source\repos\Avar OCR\Avar OCR\dependencies\leptonica_x64-windows-static\include;C:\Users\user\source\repos\Avar OCR\Avar OCR\dependencies\tesseract_x64-windows-static\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="Configuration">

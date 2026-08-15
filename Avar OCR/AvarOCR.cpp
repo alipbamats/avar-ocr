@@ -1,6 +1,42 @@
 #include "AvarOCR.h"
 
 
+// Structure to pass data into the enumeration callback
+struct HandleData {
+    DWORD processId;
+    HWND windowHandle;
+};
+
+// Callback function to evaluate each top-level window
+BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    HandleData& data = *reinterpret_cast<HandleData*>(lParam);
+    DWORD processId = 0;
+
+    // Get the process ID of the iterated window
+    GetWindowThreadProcessId(hwnd, &processId);
+
+    // Ensure it belongs to our target process and is the main top-level window
+    if (data.processId == processId && GetWindow(hwnd, GW_OWNER) == NULL && IsWindowVisible(hwnd)) {
+        data.windowHandle = hwnd;
+        return FALSE; // Stop enumerating, we found it!
+    }
+    return TRUE; // Continue scanning
+}
+
+HWND GetWindowHandleByPID(DWORD processId) {
+    HandleData data;
+    data.processId = processId;
+    data.windowHandle = NULL;
+    while (true)
+    {
+        EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&data));
+        if (data.windowHandle) break;
+    }
+
+    return data.windowHandle;
+}
+
+
 AvarOCR::AvarOCR(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -22,10 +58,59 @@ AvarOCR::AvarOCR(QWidget *parent)
     this->initOcrArea();
     this->initMenuBar();
 
+    this->initWorkFolder();
+    this->initNotepad();
+
     this->infoLabel = new QLabel("Start", this);
     this->infoLabel->setFixedHeight(25);
     this->mainSplitter->addWidget(this->infoLabel);
     this->setCentralWidget(this->mainSplitter);
+}
+
+
+void AvarOCR::initNotepad()
+{
+    const char* username = std::getenv("USERNAME");
+    std::filesystem::path notapadConfigFolder = L"C:\\Users\\"/std::filesystem::path(username)/L"AppData\\Roaming\\Notepad++\\plugins\\Config";
+    std::filesystem::path commonHunspellFolder = L"C:\\Users\\" / std::filesystem::path(username) / L"AppData\\Roaming\\Notepad++\\plugins\\Config\\Hunspell";
+    std::filesystem::path localHunspellDir = ".\\Notepad++\\Hunspell";
+    if (!std::filesystem::is_directory(notapadConfigFolder))
+    {
+        STARTUPINFO si;
+       
+        PROCESS_INFORMATION pi;
+        ZeroMemory(&si, sizeof(si));
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+
+        ZeroMemory(&pi, sizeof(pi));
+        if (!CreateProcess(NULL, (LPWSTR)this->execNotepadPath.c_str(), NULL, NULL, FALSE, NULL, NULL, NULL, &si, &pi)) {
+            std::cerr << "CreateProcess failed. Error: " << GetLastError() << std::endl;
+            return;
+        }
+        uint64_t start_time = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        ).count();
+        while (true)
+        {
+            uint64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count();
+           // if ((current_time - start_time) > 4) break;
+           
+            if (std::filesystem::is_directory(notapadConfigFolder)) break;
+        }
+        this->killProcess(pi.dwProcessId);
+    }
+    if (!std::filesystem::is_directory(commonHunspellFolder))
+    {
+        std::filesystem::create_directory(commonHunspellFolder);
+        const auto copyOptions = std::filesystem::copy_options::recursive
+            | std::filesystem::copy_options::skip_existing;
+
+        std::filesystem::copy(localHunspellDir, commonHunspellFolder, copyOptions);
+    }
 }
 
 void AvarOCR::initOperationsPannel()
@@ -62,6 +147,15 @@ void AvarOCR::initOperationsPannel()
 
 }
 
+void AvarOCR::initWorkFolder()
+{
+    if (std::filesystem::is_directory(this->workFolder))
+    {
+       std::filesystem::remove_all(this->workFolder);
+    }
+    std::filesystem::create_directory(this->workFolder);
+}
+
 void AvarOCR::initMenuBar()
 {
     QMenuBar* menuBar = new QMenuBar();
@@ -81,8 +175,34 @@ void AvarOCR::initMenuBar()
 
 void AvarOCR::initOcrArea()
 {
-    this->ocrArea = new QScrollArea();
-    this->windowSplitter->addWidget(this->ocrArea);
+    this->windowSplitter->addWidget(new QWidget());
+
+
+    //STARTUPINFO si;
+    //PROCESS_INFORMATION pi;
+    //ZeroMemory(&si, sizeof(si));
+    //si.cb = sizeof(si);
+    //ZeroMemory(&pi, sizeof(pi));
+    //QList<QString> processCommandArgsList;
+
+    //processCommandArgsList.append(QString(this->execNotepadPath));
+    //processCommandArgsList.append(QString(L"-multiInst"));
+    //QString processCommand = processCommandArgsList.join(L" ");
+    //std::wstring wstr_command = reinterpret_cast<const wchar_t*>(processCommand.utf16());
+    //// Create the child process
+    //if (!CreateProcess(NULL, (LPWSTR)wstr_command.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+    //    std::cerr << "CreateProcess failed. Error: " << GetLastError() << std::endl;
+    //    return;
+    //}
+    //this->handleNotepad = pi.hProcess;
+    //this->pidNotepad = pi.dwProcessId;
+    //HWND hWnd = GetWindowHandleByPID(pi.dwProcessId);
+    //QWindow* foreignWindow = QWindow::fromWinId(WId(hWnd));
+
+    //// 5. Create the QWidget wrapper
+    //QWidget* containerWidget = QWidget::createWindowContainer(foreignWindow, this);
+    //QWidget* removedWidget = this->windowSplitter->replaceWidget(1, containerWidget);
+    //delete removedWidget;
 }
 
 void AvarOCR::handleViewFormatSwitch(bool checked)
@@ -90,56 +210,120 @@ void AvarOCR::handleViewFormatSwitch(bool checked)
     if (checked)
     {
         this->switchLabel->setText("Text");
-        if(this->curentOCRImageInfo!=NULL)
-            this->viewAsText(this->ocrArea, this->curentOCRImageInfo->ocrText);
+        if (this->curentOCRImageInfo != NULL)
+        {
+            QList<QString> args;
+            args.append(QString(L"-multiInst"));
+            const wchar_t* envBlock = L"MY_VAR=HelloWorld\0"
+                L"OTHER_VAR=123\0";
+            this->viewProcess(this->execNotepadPath, args, this->curentOCRImageInfo->textFilename, CREATE_UNICODE_ENVIRONMENT, envBlock);
+        }
     }
     else
     {
         this->switchLabel->setText("Image");
         if (this->curentOCRImageInfo != NULL)
-            this->viewAsImage(this->ocrArea, this->curentOCRImageInfo->filename);
+        {
+            QList<QString> args;
+            this->viewProcess(this->execPaintPath, args, this->curentOCRImageInfo->filename,NULL,NULL);
+        }
     }
 }
-
-void AvarOCR::handleStartOCR()
+void AvarOCR::ocrThread()
 {
     for (OCRImageInfo& ocrImageInfo : this->OCRImageInfoList) {
 
-         // 1. Initialize the Tesseract API instance
-         tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
-         api->Init("data", "avar");
-         // 2. Initialize OCR engine with English ("eng") and LSTM engine mode
-         // Note: Change the path to where your "tessdata" folder is stored.
-         if (api->Init(".\\tessdata", "avar", tesseract::OEM_LSTM_ONLY)) {
-             std::cerr << "Could not initialize tesseract." << std::endl;
-             continue;
-         }
-         QByteArray filenameArray = ocrImageInfo.filename.toUtf8();
-         QString infoText = QString("OCR: \"%1\"").arg(ocrImageInfo.filename);
-         this->infoLabel->setText(infoText);
-         const char* c_str = filenameArray.constData();
-         // 3. Open the image file using Leptonica library
-         Pix* image = pixRead(c_str);
-         if (!image) {
-             std::cerr << "Could not open input image." << std::endl;
-             api->End();
-             continue;
-         }
+        // 1. Initialize the Tesseract API instance
+        tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
+        api->Init("data", "avar");
+        // 2. Initialize OCR engine with English ("eng") and LSTM engine mode
+        // Note: Change the path to where your "tessdata" folder is stored.
+        if (api->Init(".\\tessdata", "avar", tesseract::OEM_LSTM_ONLY)) {
+            std::cerr << "Could not initialize tesseract." << std::endl;
+            continue;
+        }
+        QByteArray filenameArray = ocrImageInfo.filename.toUtf8();
+        QString infoText = QString("OCR: \"%1\"").arg(ocrImageInfo.filename);
+        this->infoLabel->setText(infoText);
+        const char* c_str = filenameArray.constData();
+        // 3. Open the image file using Leptonica library
+        Pix* image = pixRead(c_str);
+        if (!image) {
+            std::cerr << "Could not open input image." << std::endl;
+            api->End();
+            continue;
+        }
 
-         // 4. Set the image into the engine and run OCR
-         api->SetImage(image);
-         char* outText = api->GetUTF8Text();
-         ocrImageInfo.ocrText = QString(outText);
-         // 5. Print the recognized text
-         std::cout << "OCR Result:\n" << outText << std::endl;
+        // 4. Set the image into the engine and run OCR
+        api->SetImage(image);
+        char* outText = api->GetUTF8Text();
+        ocrImageInfo.ocrText = QString(outText);
+        std::string std_filename = ocrImageInfo.filename.toUtf8().constData();
+        std::filesystem::path fsysImagePath(std_filename.c_str());
+        //fsysImagePath.filename
+        std::filesystem::path fsysTmpTextPath = this->workFolder / fsysImagePath.stem();
+        fsysTmpTextPath += ".txt";
+        std::ofstream outFile(fsysTmpTextPath);
+        outFile << ocrImageInfo.ocrText.toUtf8().constData();
+        outFile.close();
+        ocrImageInfo.textFilename = QString(fsysTmpTextPath.c_str());
+        // 5. Print the recognized text
+        std::cout << "OCR Result:\n" << outText << std::endl;
 
-         // 6. Free memory and clean up pointers
-         api->End();
-         delete api;
-         delete[] outText;
-         pixDestroy(&image);
-      
+        // 6. Free memory and clean up pointers
+        api->End();
+        delete api;
+        delete[] outText;
+        pixDestroy(&image);
+
     }
+}
+void AvarOCR::handleStartOCR()
+{
+
+    std::thread threadStartOCR([this]() {
+        ocrThread();
+        });
+    threadStartOCR.detach();
+
+
+    //for (OCRImageInfo& ocrImageInfo : this->OCRImageInfoList) {
+
+    //     // 1. Initialize the Tesseract API instance
+    //     tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
+    //     api->Init("data", "avar");
+    //     // 2. Initialize OCR engine with English ("eng") and LSTM engine mode
+    //     // Note: Change the path to where your "tessdata" folder is stored.
+    //     if (api->Init(".\\tessdata", "avar", tesseract::OEM_LSTM_ONLY)) {
+    //         std::cerr << "Could not initialize tesseract." << std::endl;
+    //         continue;
+    //     }
+    //     QByteArray filenameArray = ocrImageInfo.filename.toUtf8();
+    //     QString infoText = QString("OCR: \"%1\"").arg(ocrImageInfo.filename);
+    //     this->infoLabel->setText(infoText);
+    //     const char* c_str = filenameArray.constData();
+    //     // 3. Open the image file using Leptonica library
+    //     Pix* image = pixRead(c_str);
+    //     if (!image) {
+    //         std::cerr << "Could not open input image." << std::endl;
+    //         api->End();
+    //         continue;
+    //     }
+
+    //     // 4. Set the image into the engine and run OCR
+    //     api->SetImage(image);
+    //     char* outText = api->GetUTF8Text();
+    //     ocrImageInfo.ocrText = QString(outText);
+    //     // 5. Print the recognized text
+    //     std::cout << "OCR Result:\n" << outText << std::endl;
+
+    //     // 6. Free memory and clean up pointers
+    //     api->End();
+    //     delete api;
+    //     delete[] outText;
+    //     pixDestroy(&image);
+    //  
+    //}
  
 }
 void AvarOCR::initImagesListWidget()
@@ -184,6 +368,7 @@ void AvarOCR::initImagesListWidget()
     //    ocrImageInfo.layout = new QVBoxLayout(ocrImageInfo.container);
 
     //    ocrImageInfo.filename = QString(path);
+    //    ocrImageInfo.textFilename = QString(".\\Notepad++\\1.txt");
 
     //    QLabel* imageLabel = new QLabel("Left Text");
 
@@ -216,11 +401,18 @@ void AvarOCR::handleImagesListWidgetDoubleClick(QListWidgetItem* item)
             this->curentOCRImageInfo = &ocrImageInfo;
             if (this->viewFormatSwitch->isChecked())
             {
-                this->viewAsText(this->ocrArea, ocrImageInfo.ocrText);
+                QList<QString> args;
+                args.append(QString(L"-multiInst"));
+                const wchar_t* envBlock = L"MY_VAR=HelloWorld\0"
+                    L"OTHER_VAR=123\0";
+
+                this->viewProcess(this->execNotepadPath, args, ocrImageInfo.textFilename, CREATE_UNICODE_ENVIRONMENT, envBlock);
             }
             else
             {
-                this->viewAsImage(this->ocrArea, ocrImageInfo.filename);
+                QList<QString> args;
+                this->viewProcess(this->execPaintPath, args, ocrImageInfo.filename,NULL,NULL);
+                //this->viewAsImage(this->ocrArea, ocrImageInfo.filename);
             }
 
             QString infoText = QString("Show: \"%1\"").arg(ocrImageInfo.filename);
@@ -228,26 +420,78 @@ void AvarOCR::handleImagesListWidgetDoubleClick(QListWidgetItem* item)
         }
     }
 }
-
-void AvarOCR::viewAsText(QScrollArea * scrollArea, QString text)
+void AvarOCR::viewProcess(std::wstring processName, QList<QString> args, QString filename, DWORD  dwCreationFlags, const wchar_t* envBlock)
 {
+    this->killProcess(this->lastPID);
+    STARTUPINFO si;
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+    QList<QString> processCommandArgsList;
 
-    QSize visibleSize = scrollArea->viewport()->size();
-    QTextEdit* textEditor = new QTextEdit();
-    textEditor->resize(visibleSize);
-    textEditor->setText(text);
-    scrollArea->setWidget(textEditor);
+    processCommandArgsList.append(QString(processName));
+    
+    for (const auto& arg : args) {
+        processCommandArgsList.append(arg);
+    }
+    processCommandArgsList.append(filename);
+    QString processCommand = processCommandArgsList.join(L" ");
+    std::wstring wstr_command = reinterpret_cast<const wchar_t*>(processCommand.utf16());
+    // Create the child process
+    if (!CreateProcess(NULL, (LPWSTR)wstr_command.c_str(), NULL, NULL, FALSE, dwCreationFlags, (LPVOID)envBlock, NULL, &si, &pi)) {
+        std::cerr << "CreateProcess failed. Error: " << GetLastError() << std::endl;
+        return;
+    }
+    this->lastPID = pi.dwProcessId;
+    HWND hWnd = GetWindowHandleByPID(pi.dwProcessId);
+    QWindow* foreignWindow = QWindow::fromWinId(WId(hWnd));
+
+    // 5. Create the QWidget wrapper
+    QWidget* containerWidget = QWidget::createWindowContainer(foreignWindow, this);
+    QWidget* removedWidget = this->windowSplitter->replaceWidget(1, containerWidget);
+    delete removedWidget;
+
 }
-
-void AvarOCR::viewAsImage(QScrollArea * scrollArea, QString imagePath)
-{
-    QLabel* imageLabel = new QLabel;
-    QPixmap pixmap(imagePath);
-    imageLabel->setPixmap(pixmap);
-
-    imageLabel->resize(pixmap.size());
-    scrollArea->setWidget(imageLabel);
-}
+//void AvarOCR::viewAsText(QScrollArea * scrollArea, QString text)
+//{
+//    STARTUPINFO si;
+//    PROCESS_INFORMATION pi;
+//    ZeroMemory(&si, sizeof(si));
+//    si.cb = sizeof(si);
+//    ZeroMemory(&pi, sizeof(pi));
+//    QList<QString> processCommandArgsList;
+//
+//    processCommandArgsList.append(QString(this->execNotepadPath));
+//    processCommandArgsList.append(QString(L"-multiInst"));
+//    processCommandArgsList.append(text);
+//    QString processCommand = processCommandArgsList.join(L" ");
+//    std::wstring wstr_command = reinterpret_cast<const wchar_t*>(processCommand.utf16());
+//    // Create the child process
+//    if (!CreateProcess(NULL, (LPWSTR)wstr_command.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+//        std::cerr << "CreateProcess failed. Error: " << GetLastError() << std::endl;
+//        return;
+//    }
+//    this->lastPID = pi.dwProcessId;
+//    HWND hWnd = GetWindowHandleByPID(pi.dwProcessId);
+//    QWindow* foreignWindow = QWindow::fromWinId(WId(hWnd));
+//
+//    // 5. Create the QWidget wrapper
+//    QWidget* containerWidget = QWidget::createWindowContainer(foreignWindow, this);
+//    QWidget* removedWidget = this->windowSplitter->replaceWidget(1, containerWidget);
+//    delete removedWidget;
+//}
+//
+//void AvarOCR::viewAsImage(QScrollArea * scrollArea, QString imagePath)
+//{
+//    QLabel* imageLabel = new QLabel;
+//    QPixmap pixmap(imagePath);
+//    imageLabel->setPixmap(pixmap);
+//
+//    imageLabel->resize(pixmap.size());
+//    QWidget* removedWidget = this->windowSplitter->replaceWidget(1, imageLabel);
+//    delete removedWidget;
+//}
 
 void AvarOCR::OpenFileDialog()
 {
@@ -278,7 +522,7 @@ void AvarOCR::OpenFileDialog()
         ocrImageInfo.container = new QWidget();
         ocrImageInfo.layout = new QVBoxLayout(ocrImageInfo.container);
 
-        ocrImageInfo.filename = QString(path);
+        ocrImageInfo.filename = QString(path).replace("/","\\");
 
         QLabel* imageLabel = new QLabel("Left Text");
 
@@ -303,6 +547,21 @@ void AvarOCR::OpenFileDialog()
 
 }
 
+bool AvarOCR::killProcess(DWORD pid)
+{
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (hProcess == NULL) {
+       
+        std::cerr << "Failed to open process. Error: " << GetLastError() << std::endl;
+        return false;
+    }
+    BOOL result = TerminateProcess(hProcess, 1);
+    CloseHandle(hProcess);
+    return result != 0;
+}
+
 AvarOCR::~AvarOCR()
-{}
+{
+    this->killProcess(this->lastPID);
+}
 
