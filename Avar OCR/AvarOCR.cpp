@@ -72,8 +72,7 @@ void AvarOCR::initNotepad()
 {
     const char* username = std::getenv("USERNAME");
     std::filesystem::path notapadConfigFolder = L"C:\\Users\\"/std::filesystem::path(username)/L"AppData\\Roaming\\Notepad++\\plugins\\Config";
-    std::filesystem::path commonHunspellFolder = L"C:\\Users\\" / std::filesystem::path(username) / L"AppData\\Roaming\\Notepad++\\plugins\\Config\\Hunspell";
-    std::filesystem::path localHunspellDir = ".\\Notepad++\\Hunspell";
+    std::filesystem::path localHunspellDir = ".\\plugin";
     if (!std::filesystem::is_directory(notapadConfigFolder))
     {
         STARTUPINFO si;
@@ -97,20 +96,20 @@ void AvarOCR::initNotepad()
             uint64_t current_time = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count();
-           // if ((current_time - start_time) > 4) break;
+            if ((current_time - start_time) > 4) break;
            
             if (std::filesystem::is_directory(notapadConfigFolder)) break;
         }
         this->killProcess(pi.dwProcessId);
-    }
-    if (!std::filesystem::is_directory(commonHunspellFolder))
-    {
-        std::filesystem::create_directory(commonHunspellFolder);
-        const auto copyOptions = std::filesystem::copy_options::recursive
-            | std::filesystem::copy_options::skip_existing;
+        if (std::filesystem::is_directory(notapadConfigFolder))
+        {
+            const auto copyOptions = std::filesystem::copy_options::recursive
+                | std::filesystem::copy_options::skip_existing;
 
-        std::filesystem::copy(localHunspellDir, commonHunspellFolder, copyOptions);
+            std::filesystem::copy(localHunspellDir, notapadConfigFolder, copyOptions);
+        }
     }
+  
 }
 
 void AvarOCR::initOperationsPannel()
